@@ -15,7 +15,7 @@ import (
 	"github.com/pkg/errors"
 )
 
-type CallbackFunc func(title string)
+type MetadataCallback func(title string)
 
 type Endpoint struct {
 	// The address of the icecast server
@@ -25,8 +25,27 @@ type Endpoint struct {
 	Encoding string
 }
 
-func Poll(endpoint Endpoint, cb CallbackFunc) error {
-	err := doPoll(endpoint, cb)
+type pollOptions struct {
+	Sink     io.Writer
+	Callback MetadataCallback
+}
+
+type Option func(opts *pollOptions)
+
+func WithMetadataCallback(callback MetadataCallback) Option {
+	return func(opts *pollOptions) {
+		opts.Callback = callback
+	}
+}
+
+func WithAudioSink(sink io.Writer) Option {
+	return func(opts *pollOptions) {
+		opts.Sink = sink
+	}
+}
+
+func Poll(endpoint Endpoint, o ...Option) error {
+	err := doPoll(endpoint, o...)
 	if err != nil {
 		return errors.WithMessagef(err, "polling %s", endpoint.URL)
 	}
@@ -35,7 +54,15 @@ func Poll(endpoint Endpoint, cb CallbackFunc) error {
 
 const metadataBlockSize = 16
 
-func doPoll(endpoint Endpoint, cb CallbackFunc) error {
+func doPoll(endpoint Endpoint, o ...Option) error {
+	opts := &pollOptions{}
+	for _, opt := range o {
+		opt(opts)
+	}
+	if opts.Sink == nil {
+		opts.Sink = ioutil.Discard
+	}
+
 	// this has something like 10s connect timeout, 30s idle timeout, etc.
 	client := timeout.NewDefaultClient()
 
@@ -72,8 +99,8 @@ func doPoll(endpoint Endpoint, cb CallbackFunc) error {
 	decoder := charmap.ISO8859_1.NewDecoder()
 
 	for {
-		// for each "frame", discard audio data
-		_, err := io.CopyN(ioutil.Discard, stream, audioBytes)
+		// for each "frame", forward audio data
+		_, err := io.CopyN(opts.Sink, stream, audioBytes)
 		if err != nil {
 			return errors.WithStack(err)
 		}
@@ -108,7 +135,9 @@ func doPoll(endpoint Endpoint, cb CallbackFunc) error {
 				if strings.Trim(value, " -") == "" {
 					continue
 				}
-				cb(value)
+				if opts.Callback != nil {
+					opts.Callback(value)
+				}
 			}
 		}
 	}

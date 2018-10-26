@@ -21,9 +21,9 @@ func main() {
 	endpoint := chill.Endpoint{
 		URL: *url,
 	}
-	must(chill.Poll(endpoint, func(title string) {
+	must(chill.Poll(endpoint, chill.WithMetadataCallback(func(title string) {
 		log.Printf("%s", title)
-	}))
+	})))
 }
 
 func must(err error) {
