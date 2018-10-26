@@ -101,9 +101,13 @@ func doPoll(endpoint Endpoint, cb CallbackFunc) error {
 				continue
 			}
 
+			tokens := strings.SplitN(pair, "=", 2)
 			key, value := tokens[0], tokens[1]
 			if key == "StreamTitle" {
 				value = unquoteMetadataValue(value)
+				if strings.Trim(value, " -") == "" {
+					continue
+				}
 				cb(value)
 			}
 		}
